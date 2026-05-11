@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>南汐通勤即時監測</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; margin: 0; padding: 10px; color: #333; }
+        .container { width: 100%; max-width: 600px; margin: 0 auto; }
+        .header { background: #007bff; color: white; padding: 12px; border-radius: 15px; text-align: center; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .refresh-btn { background: #28a745; color: white; border: none; padding: 12px; border-radius: 25px; font-size: 16px; font-weight: bold; width: 90%; cursor: pointer; box-shadow: 0 4px 0 #1e7e34; margin: 5px 0; }
+        .refresh-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #1e7e34; }
+        .refresh-btn:disabled { background: #ccc; box-shadow: none; }
+        
+        .bus-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        
+        .live-card { background: white; border-radius: 12px; overflow: hidden; border-top: 5px solid #007bff; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; flex-direction: column; }
+        .line-951 { border-top-color: #28a745; }
+        
+        /* 讓卡片標題可以點擊 */
+        .card-link { text-decoration: none; color: inherit; display: block; }
+        .card-link:active { background-color: #f0f0f0; }
+
+        .card-title { background: #f8f9fa; padding: 6px 10px; font-weight: bold; border-bottom: 1px solid #eee; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+        
+        .stop-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-bottom: 1px solid #f9f9f9; font-size: 12px; min-height: 35px; }
+        .stop-item:last-child { border-bottom: none; }
+        .stop-name { flex: 1; padding-right: 5px; line-height: 1.3; word-break: break-all; }
+        .stop-time { flex-shrink: 0; width: 45px; text-align: right; }
+        
+        .time-tag { font-weight: bold; color: #28a745; }
+        .time-soon { color: #d9534f; animation: blink 1s infinite; font-weight: bold; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+        .status-msg { font-size: 11px; margin-top: 4px; color: #ffeeba; min-height: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h3 style="margin:0">南港 ➔ 汐止通勤監控</h3>
+        <button class="refresh-btn" id="refBtn" onclick="manualUpdate()">🔄 手動更新資料</button>
+        <div id="update-time" class="status-msg">初始化連線中...</div>
+    </div>
+    
+    <div id="bus-display" class="bus-grid">
+        <div style="grid-column: span 2; padding:40px; text-align:center; color:#999;">正在連線官方資料...</div>
+    </div>
+</div>
+
+<script>
+    // --- 🔑 請填入您的 TDX 金鑰 ---
+    const CLIENT_ID = 'yajurose47-bb044764-b3f4-4111'; 
+    const CLIENT_SECRET = 'e6bfccbb-0ac3-4d5c-b55f-b726e10b435f';
+
+    const config = [
+        { 
+            name: "951", 
+            color: "line-951", 
+            url: "https://pda5284.gov.taipei/MQS/route.jsp?rid=17548", // 951 官方網頁
+            stops: ["捷運南港軟體園區站", "南港軟體園區北站", "南港軟體園區南站", "捷運南港展覽館站(南港路)", "東方科學園區"] 
+        },
+        { name: "藍15", url: "https://pda5284.gov.taipei/MQS/route.jsp?rid=16296", stops: ["捷運南港展覽館站(南港路)", "遠東世界中心", "東方科學園區"] },
+        { name: "678", url: "https://pda5284.gov.taipei/MQS/route.jsp?rid=5416", stops: ["捷運南港展覽館站(南港路)", "遠東世界中心", "東方科學園區"] },
+        { name: "675", url: "https://pda5284.gov.taipei/MQS/route.jsp?rid=15512", stops: ["捷運南港展覽館站(經貿二)", "捷運南港展覽館站(南港路)", "遠東世界中心", "東方科學園區"] },
+        { name: "823", url: "https://pda5284.gov.taipei/MQS/route.jsp?rid=17525", stops: ["捷運南港展覽館站(南港路)", "遠東世界中心", "東方科學園區"] },
+        { name: "589", url: "https://pda5284.gov.taipei/MQS/route.jsp?rid=17009", stops: ["捷運南港展覽館站(南港路)", "遠東世界中心", "東方科學園區"] }
+    ];
+
+    let accessToken = '';
+    let isFetching = false;
+
+    async function getToken() {
+        try {
+            const res = await fetch('https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ 
+                    'grant_type': 'client_credentials', 
+                    'client_id': CLIENT_ID.trim(), 
+                    'client_secret': CLIENT_SECRET.trim() 
+                })
+            });
+            if (!res.ok) return false;
+            const data = await res.json();
+            accessToken = data.access_token || '';
+            return !!accessToken;
+        } catch (e) { return false; }
+    }
+
+    function formatTime(sec) {
+        if (sec === undefined || sec === null || sec < 0) return '<span style="color:#aaa">未發車</span>';
+        if (sec <= 60) return '<span class="time-soon">進站</span>';
+        if (sec <= 120) return '<span class="time-soon">將到</span>';
+        return `<span class="time-tag">${Math.floor(sec / 60)}分</span>`;
+    }
+
+    async function updateAll() {
+        if (isFetching) return;
+        isFetching = true;
+        document.getElementById('refBtn').disabled = true;
+        const timeLabel = document.getElementById('update-time');
+        const display = document.getElementById('bus-display');
+        
+        if (!accessToken) {
+            const ok = await getToken();
+            if (!ok) { 
+                timeLabel.innerText = "❌ 連線失敗 (請檢查金鑰)"; 
+                isFetching = false;
+                document.getElementById('refBtn').disabled = false;
+                return; 
+            }
+        }
+        
+        timeLabel.innerText = "同步動態中...";
+
+        try {
+            const routeNames = config.map(c => c.name).join("','");
+            const res = await fetch(`https://tdx.transportdata.tw/api/basic/v2/Bus/EstimatedTimeOfArrival/City/NewTaipei?$filter=RouteName/Zh_tw in ('${routeNames}') and Direction eq 1&$format=JSON`, {
+                headers: { 'authorization': `Bearer ${accessToken}` }
+            });
+
+            if (res.status === 401) { accessToken = ''; isFetching = false; updateAll(); return; }
+            const allData = await res.json();
+            
+            let fullHtml = '';
+            config.forEach(bus => {
+                let stopHtml = '';
+                const busData = allData.filter(d => d.RouteName.Zh_tw === bus.name);
+                bus.stops.forEach(sName => {
+                    const stop = busData.find(d => d.StopName.Zh_tw.trim() === sName.trim());
+                    stopHtml += `
+                        <div class="stop-item">
+                            <span class="stop-name">${sName}</span>
+                            <span class="stop-time">${formatTime(stop?.EstimateTime)}</span>
+                        </div>`;
+                });
+                
+                // 這裡將整個卡片的標題部分封裝在超連結內
+                fullHtml += `
+                    <div class="live-card ${bus.color || ''}">
+                        <a href="${bus.url}" target="_blank" class="card-link">
+                            <div class="card-title">
+                                <span>${bus.name} ➔</span>
+                                <span style="font-size:0.6em; color:#888;">點擊看全線</span>
+                            </div>
+                        </a>
+                        <div>${stopHtml}</div>
+                    </div>`;
+            });
+            
+            display.innerHTML = fullHtml;
+            timeLabel.innerText = "✅ 更新成功: " + new Date().toLocaleTimeString('zh-TW', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        } catch (e) {
+            timeLabel.innerText = "⚠️ 伺服器忙碌中";
+        } finally {
+            isFetching = false;
+            document.getElementById('refBtn').disabled = false;
+        }
+    }
+
+    function manualUpdate() { updateAll(); }
+    
+    if (CLIENT_ID !== 'YOUR_CLIENT_ID') {
+        updateAll();
+        setInterval(updateAll, 30000);
+    }
+</script>
+</body>
+</html>
