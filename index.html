@@ -3,29 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>南汐通勤即時監測</title>
+    <title>南汐通勤 App</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; margin: 0; padding: 10px; color: #333; }
-        .container { width: 100%; max-width: 600px; margin: 0 auto; }
-        .header { background: #007bff; color: white; padding: 12px; border-radius: 15px; text-align: center; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .refresh-btn { background: #28a745; color: white; border: none; padding: 12px; border-radius: 25px; font-size: 16px; font-weight: bold; width: 90%; cursor: pointer; box-shadow: 0 4px 0 #1e7e34; margin: 5px 0; }
-        .refresh-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #1e7e34; }
+        body { font-family: -apple-system, sans-serif; background: #f0f2f5; margin: 0; padding: 0; color: #333; overflow-x: hidden; }
+        .container { width: 100%; max-width: 600px; margin: 0 auto; padding: 10px; box-sizing: border-box; }
+        
+        /* 頂部 Header */
+        .header { background: #007bff; color: white; padding: 12px; border-radius: 15px; text-align: center; margin-bottom: 12px; position: relative; }
+        .back-btn { display: none; position: absolute; left: 15px; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.2); border: none; color: white; padding: 5px 12px; border-radius: 10px; font-weight: bold; }
+        
+        .refresh-btn { background: #28a745; color: white; border: none; padding: 10px; border-radius: 20px; font-size: 16px; font-weight: bold; width: 90%; cursor: pointer; box-shadow: 0 4px 0 #1e7e34; }
         .refresh-btn:disabled { background: #ccc; box-shadow: none; }
         
+        /* 頁面切換邏輯 */
+        #main-view { display: block; }
+        #detail-view { display: none; width: 100%; height: 85vh; border: none; border-radius: 15px; background: white; }
+
+        /* 並排佈局 */
         .bus-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        
-        .live-card { background: white; border-radius: 12px; overflow: hidden; border-top: 5px solid #007bff; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; flex-direction: column; }
+        .live-card { background: white; border-radius: 12px; overflow: hidden; border-top: 5px solid #007bff; box-shadow: 0 2px 5px rgba(0,0,0,0.05); cursor: pointer; }
         .line-951 { border-top-color: #28a745; }
         
-        /* 讓卡片標題可以點擊 */
-        .card-link { text-decoration: none; color: inherit; display: block; }
-        .card-link:active { background-color: #f0f0f0; }
-
-        .card-title { background: #f8f9fa; padding: 6px 10px; font-weight: bold; border-bottom: 1px solid #eee; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
-        
-        .stop-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-bottom: 1px solid #f9f9f9; font-size: 12px; min-height: 35px; }
-        .stop-item:last-child { border-bottom: none; }
-        .stop-name { flex: 1; padding-right: 5px; line-height: 1.3; word-break: break-all; }
+        .card-title { background: #f8f9fa; padding: 8px 10px; font-weight: bold; border-bottom: 1px solid #eee; font-size: 14px; display: flex; justify-content: space-between; }
+        .stop-item { display: flex; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #f9f9f9; font-size: 12px; min-height: 32px; align-items: center; }
+        .stop-name { flex: 1; padding-right: 5px; line-height: 1.2; }
         .stop-time { flex-shrink: 0; width: 45px; text-align: right; }
         
         .time-tag { font-weight: bold; color: #28a745; }
@@ -38,28 +39,29 @@
 
 <div class="container">
     <div class="header">
-        <h3 style="margin:0">南港 ➔ 汐止通勤監控</h3>
-        <button class="refresh-btn" id="refBtn" onclick="manualUpdate()">🔄 手動更新資料</button>
-        <div id="update-time" class="status-msg">初始化連線中...</div>
+        <button id="backBtn" class="back-btn" onclick="showMain()">⬅ 返回</button>
+        <span id="headerTitle">南港 ➔ 汐止通勤</span>
+        <div id="refreshSection">
+            <button class="refresh-btn" id="refBtn" onclick="manualUpdate()">🔄 手動更新資料</button>
+        </div>
+        <div id="update-time" class="status-msg">初始化中...</div>
     </div>
     
-    <div id="bus-display" class="bus-grid">
-        <div style="grid-column: span 2; padding:40px; text-align:center; color:#999;">正在連線官方資料...</div>
+    <div id="main-view">
+        <div id="bus-display" class="bus-grid">
+            <div style="grid-column: span 2; padding:40px; text-align:center; color:#999;">正在讀取公車資訊...</div>
+        </div>
     </div>
+
+    <iframe id="detail-view" src=""></iframe>
 </div>
 
 <script>
-    // --- 🔑 請填入您的 TDX 金鑰 ---
     const CLIENT_ID = 'yajurose47-bb044764-b3f4-4111'; 
     const CLIENT_SECRET = 'e6bfccbb-0ac3-4d5c-b55f-b726e10b435f';
 
     const config = [
-        { 
-            name: "951", 
-            color: "line-951", 
-            url: "https://pda5284.gov.taipei/MQS/route.jsp?rid=17548", // 951 官方網頁
-            stops: ["捷運南港軟體園區站", "南港軟體園區北站", "南港軟體園區南站", "捷運南港展覽館站(南港路)", "東方科學園區"] 
-        },
+        { name: "951", color: "line-951", url: "https://pda5284.gov.taipei/MQS/route.jsp?rid=17548", stops: ["捷運南港軟體園區站", "南港軟體園區北站", "南港軟體園區南站", "捷運南港展覽館站(南港路)", "東方科學園區"] },
         { name: "藍15", url: "https://pda5284.gov.taipei/MQS/route.jsp?rid=16296", stops: ["捷運南港展覽館站(南港路)", "遠東世界中心", "東方科學園區"] },
         { name: "678", url: "https://pda5284.gov.taipei/MQS/route.jsp?rid=5416", stops: ["捷運南港展覽館站(南港路)", "遠東世界中心", "東方科學園區"] },
         { name: "675", url: "https://pda5284.gov.taipei/MQS/route.jsp?rid=15512", stops: ["捷運南港展覽館站(經貿二)", "捷運南港展覽館站(南港路)", "遠東世界中心", "東方科學園區"] },
@@ -70,18 +72,35 @@
     let accessToken = '';
     let isFetching = false;
 
+    // 顯示詳細頁面
+    function showDetail(url, name) {
+        document.getElementById('main-view').style.display = 'none';
+        document.getElementById('refreshSection').style.display = 'none';
+        document.getElementById('backBtn').style.display = 'block';
+        document.getElementById('headerTitle').innerText = name + ' 全線動態';
+        
+        const iframe = document.getElementById('detail-view');
+        iframe.style.display = 'block';
+        iframe.src = url;
+    }
+
+    // 返回主頁面
+    function showMain() {
+        document.getElementById('main-view').style.display = 'block';
+        document.getElementById('refreshSection').style.display = 'block';
+        document.getElementById('backBtn').style.display = 'none';
+        document.getElementById('headerTitle').innerText = '南港 ➔ 汐止通勤';
+        document.getElementById('detail-view').style.display = 'none';
+        document.getElementById('detail-view').src = '';
+    }
+
     async function getToken() {
         try {
             const res = await fetch('https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ 
-                    'grant_type': 'client_credentials', 
-                    'client_id': CLIENT_ID.trim(), 
-                    'client_secret': CLIENT_SECRET.trim() 
-                })
+                body: new URLSearchParams({ 'grant_type': 'client_credentials', 'client_id': CLIENT_ID.trim(), 'client_secret': CLIENT_SECRET.trim() })
             });
-            if (!res.ok) return false;
             const data = await res.json();
             accessToken = data.access_token || '';
             return !!accessToken;
@@ -96,20 +115,14 @@
     }
 
     async function updateAll() {
-        if (isFetching) return;
+        if (isFetching || document.getElementById('main-view').style.display === 'none') return;
         isFetching = true;
         document.getElementById('refBtn').disabled = true;
         const timeLabel = document.getElementById('update-time');
-        const display = document.getElementById('bus-display');
         
         if (!accessToken) {
             const ok = await getToken();
-            if (!ok) { 
-                timeLabel.innerText = "❌ 連線失敗 (請檢查金鑰)"; 
-                isFetching = false;
-                document.getElementById('refBtn').disabled = false;
-                return; 
-            }
+            if (!ok) { timeLabel.innerText = "❌ 金鑰驗證失敗"; isFetching = false; document.getElementById('refBtn').disabled = false; return; }
         }
         
         timeLabel.innerText = "同步動態中...";
@@ -129,42 +142,14 @@
                 const busData = allData.filter(d => d.RouteName.Zh_tw === bus.name);
                 bus.stops.forEach(sName => {
                     const stop = busData.find(d => d.StopName.Zh_tw.trim() === sName.trim());
-                    stopHtml += `
-                        <div class="stop-item">
-                            <span class="stop-name">${sName}</span>
-                            <span class="stop-time">${formatTime(stop?.EstimateTime)}</span>
-                        </div>`;
+                    stopHtml += `<div class="stop-item"><span class="stop-name">${sName}</span><span class="stop-time">${formatTime(stop?.EstimateTime)}</span></div>`;
                 });
-                
-                // 這裡將整個卡片的標題部分封裝在超連結內
-                fullHtml += `
-                    <div class="live-card ${bus.color || ''}">
-                        <a href="${bus.url}" target="_blank" class="card-link">
-                            <div class="card-title">
-                                <span>${bus.name} ➔</span>
-                                <span style="font-size:0.6em; color:#888;">點擊看全線</span>
-                            </div>
-                        </a>
-                        <div>${stopHtml}</div>
-                    </div>`;
+                // 點擊整張卡片觸發切換
+                fullHtml += `<div class="live-card ${bus.color || ''}" onclick="showDetail('${bus.url}', '${bus.name}')">
+                    <div class="card-title"><span>${bus.name}</span><span style="font-size:0.6em; color:#888;">點擊詳情</span></div>
+                    <div>${stopHtml}</div>
+                </div>`;
             });
             
-            display.innerHTML = fullHtml;
-            timeLabel.innerText = "✅ 更新成功: " + new Date().toLocaleTimeString('zh-TW', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
-        } catch (e) {
-            timeLabel.innerText = "⚠️ 伺服器忙碌中";
-        } finally {
-            isFetching = false;
-            document.getElementById('refBtn').disabled = false;
-        }
-    }
-
-    function manualUpdate() { updateAll(); }
-    
-    if (CLIENT_ID !== 'YOUR_CLIENT_ID') {
-        updateAll();
-        setInterval(updateAll, 30000);
-    }
-</script>
-</body>
-</html>
+            document.getElementById('bus-display').innerHTML = fullHtml;
+            timeLabel.innerText = "✅ 更新成功: " + new Date().toLocaleTimeString
